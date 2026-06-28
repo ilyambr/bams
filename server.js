@@ -85,7 +85,7 @@ function send(res, status, body, type = "text/plain; charset=utf-8") {
 
 // Stream video from Cloudflare R2
 async function sendR2Video(req, res, filename) {
-  const key = `clips/${filename}`;
+  const key = filename;
 
   try {
     const head = await r2.send(
