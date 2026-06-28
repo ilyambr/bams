@@ -20,8 +20,8 @@ const r2 = new S3Client({
   region: "auto",
   endpoint: process.env.R2_ENDPOINT,
   credentials:{
-    accessKeyId:process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey:process.env.R2_SECRET_ACCESS_KEY
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
   }
 });
 
@@ -45,16 +45,22 @@ const TWITCH_CLIENT =
 
 
 
-function send(res,status,data,type="text/plain; charset=utf-8"){
+function send(
+  res,
+  status,
+  body,
+  type="text/plain; charset=utf-8"
+){
 
   res.writeHead(status,{
     "Content-Type":type,
     "Cache-Control":"no-store"
   });
 
-  res.end(data);
+  res.end(body);
 
 }
+
 
 
 
@@ -83,13 +89,12 @@ function sendFile(res,file){
 
 
 
-
-
 async function twitchClip(slug){
 
 const query = `
 query($slug: ID!){
  clip(slug:$slug){
+
   slug
   title
   viewCount
@@ -108,6 +113,7 @@ query($slug: ID!){
     quality
     sourceURL
   }
+
  }
 }
 `;
@@ -118,26 +124,35 @@ await fetch(
 "https://gql.twitch.tv/gql",
 {
 method:"POST",
+
 headers:{
 "Client-ID":TWITCH_CLIENT,
 "Content-Type":"application/json"
 },
+
 body:JSON.stringify({
 query,
 variables:{slug}
 })
-}
-);
+
+});
 
 
 const json =
 await response.json();
 
 
-if(json.errors)
+if(
+!response.ok ||
+json.errors ||
+!json.data?.clip
+){
+
 throw Error(
-JSON.stringify(json.errors)
+JSON.stringify(json.errors || json)
 );
+
+}
 
 
 const clip =
@@ -148,7 +163,8 @@ const video =
 [...(clip.videoQualities || [])]
 .sort(
 (a,b)=>
-Number(b.quality)-Number(a.quality)
+Number(b.quality || 0) -
+Number(a.quality || 0)
 )[0];
 
 
@@ -159,7 +175,7 @@ id:clip.slug,
 title:clip.title,
 
 videoUrl:
-video.sourceURL,
+video?.sourceURL,
 
 views:
 clip.viewCount,
@@ -211,12 +227,14 @@ const size =
 Number(head.ContentLength);
 
 
-let start=0;
-let end=size-1;
+
+let start = 0;
+let end = size - 1;
 
 
 const range =
 req.headers.range;
+
 
 
 if(range){
@@ -232,13 +250,16 @@ if(match){
 start =
 Number(match[1]);
 
-if(match[2])
+
+if(match[2]){
 end =
 Number(match[2]);
-
 }
 
 }
+
+}
+
 
 
 
@@ -247,13 +268,15 @@ await r2.send(
 new GetObjectCommand({
 Bucket:R2_BUCKET,
 Key:key,
-Range:`bytes=${start}-${end}`
+Range:
+`bytes=${start}-${end}`
 })
 );
 
 
 
-const headers={
+
+const headers = {
 
 "Content-Type":
 "video/mp4",
@@ -282,28 +305,40 @@ res.writeHead(
 headers
 );
 
+
 }else{
+
 
 res.writeHead(
 200,
 headers
 );
 
+
 }
 
 
 
-if(req.method !== "HEAD")
+if(req.method !== "HEAD"){
+
 object.Body.pipe(res);
-else
+
+}else{
+
 res.end();
+
+}
 
 
 
 }
 catch(err){
 
-console.error(err);
+console.error(
+"R2 VIDEO ERROR",
+err
+);
+
 
 send(
 res,
@@ -312,7 +347,6 @@ res,
 );
 
 }
-
 
 }
 
@@ -342,7 +376,10 @@ url.pathname
 
 
 
+
+//
 // redirect missing slash
+//
 
 if(pathname === "/bams/clips"){
 
@@ -358,7 +395,11 @@ return res.end();
 
 
 
-// Twitch API
+
+
+//
+// Twitch source API
+//
 
 if(
 pathname.includes("/api/source/")
@@ -370,6 +411,7 @@ pathname.split("/api/source/")[1];
 
 try{
 
+
 return send(
 res,
 200,
@@ -380,26 +422,33 @@ await twitchClip(slug)
 );
 
 
-}catch(e){
+
+}catch(err){
+
 
 return send(
 res,
 502,
 JSON.stringify({
-error:e.message
+error:err.message
 }),
 "application/json; charset=utf-8"
 );
 
-}
 
 }
 
+}
 
 
 
 
+
+
+
+//
 // R2 videos
+//
 
 if(
 pathname.includes("/videos/")
@@ -423,33 +472,41 @@ file
 
 
 
+
+//
 // STATIC FILES
+//
+
+let clean = pathname;
 
 
-let clean =
-pathname;
+// remove app prefix
 
-
-// remove prefix
-clean =
-clean.replace(
-"/bams/clips",
-""
-);
-
-
-// remove slash
+if(
+clean.startsWith("/bams/clips")
+){
 
 clean =
-clean.replace(
-(/^\/+/),
-""
+clean.slice(
+"/bams/clips".length
 );
 
+}
 
 
-if(!clean)
+// remove /
+
+clean =
+clean.replace(/^\/+/,"");
+
+
+
+if(!clean){
+
 clean="index.html";
+
+}
+
 
 
 
@@ -461,8 +518,19 @@ clean
 
 
 
+console.log(
+"REQUEST:",
+pathname,
+"=>",
+file
+);
+
+
+
 if(
-!file.startsWith(root)
+!file.startsWith(
+path.resolve(root)
+)
 ){
 
 return send(
@@ -478,11 +546,6 @@ res,
 if(
 !fs.existsSync(file)
 ){
-
-console.log(
-"MISSING:",
-file
-);
 
 return send(
 res,
@@ -519,7 +582,9 @@ file
 .listen(
 port,
 ()=>{
+
 console.log(
-`running on ${port}`
+`clip player running at http://localhost:${port}`
 );
+
 });
