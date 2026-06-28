@@ -22,6 +22,7 @@ const outPath =
     "clips.json"
   );
 
+
 const clientId =
   "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
@@ -38,38 +39,39 @@ function slugFromUrl(url){
 
 
 
-// Titles can lose broken emoji.
-// Names should keep unicode.
-function cleanTitle(value){
+
+function cleanText(value){
 
   if(!value)
     return "";
 
-  return String(value)
+
+  let text =
+    String(value);
+
+
+  // remove broken emoji encoding
+  text =
+    text
     .replace(/ð.{0,2}/g,"")
     .replace(/Ã.{0,2}/g,"")
     .replace(/â.{0,3}/g,"")
     .replace(/≡ƒ.{0,3}/g,"")
-    .replace(/Γ.{0,3}/g,"")
+    .replace(/Γ.{0,3}/g,"");
+
+
+  // remove unsupported characters
+  text =
+    text.replace(/[^\x20-\x7E]/g,"");
+
+
+  return text
     .replace(/\s+/g," ")
     .trim()
     .normalize("NFC");
 
 }
 
-
-
-function cleanName(value){
-
-  if(!value)
-    return "";
-
-  return String(value)
-    .replace(/\s+/g," ")
-    .trim()
-    .normalize("NFC");
-
-}
 
 
 
@@ -90,6 +92,7 @@ function bestQuality(list){
 
 
 
+
 async function fetchClip(slug){
 
 const query = `
@@ -102,13 +105,16 @@ query($slug: ID!){
   createdAt
   durationSeconds
 
+
   broadcaster{
     displayName
   }
 
+
   curator{
     displayName
   }
+
 
   videoQualities{
     quality
@@ -156,9 +162,9 @@ if(
   !json.data?.clip
 ){
 
-throw new Error(
- `${slug}: ${JSON.stringify(json.errors || json)}`
-);
+ throw new Error(
+   `${slug}: ${JSON.stringify(json.errors || json)}`
+ );
 
 }
 
@@ -176,8 +182,8 @@ async function main(){
 
 const urls =
 fs.readFileSync(
- sourceList,
- "utf8"
+  sourceList,
+  "utf8"
 )
 .split(/\r?\n/)
 .map(x=>x.trim())
@@ -188,16 +194,19 @@ fs.readFileSync(
 let oldClips=[];
 
 
-if(fs.existsSync(reviewClips)){
+
+if(
+  fs.existsSync(reviewClips)
+){
 
 try{
 
 oldClips =
 JSON.parse(
- fs.readFileSync(
-  reviewClips,
-  "utf8"
- )
+  fs.readFileSync(
+    reviewClips,
+    "utf8"
+  )
 );
 
 
@@ -215,8 +224,8 @@ const oldMap =
 new Map(
  oldClips.map(
   clip=>[
-   clip.id,
-   clip
+    clip.id,
+    clip
   ]
  )
 );
@@ -229,9 +238,9 @@ const failures=[];
 
 
 for(
-let i=0;
-i<urls.length;
-i++
+ let i=0;
+ i<urls.length;
+ i++
 ){
 
 
@@ -245,7 +254,7 @@ slugFromUrl(url);
 
 
 if(!slug)
-continue;
+ continue;
 
 
 
@@ -256,8 +265,10 @@ const twitch =
 await fetchClip(slug);
 
 
+
 const old =
 oldMap.get(slug) || {};
+
 
 
 const quality =
@@ -268,7 +279,10 @@ bestQuality(
 
 
 if(!quality)
-throw new Error("no twitch quality");
+ throw new Error(
+  "no twitch quality"
+ );
+
 
 
 
@@ -278,22 +292,28 @@ id:slug,
 
 
 title:
-cleanTitle(
+cleanText(
  twitch.title ||
  old.title ||
  slug
 ),
 
 
+
 url,
 
 
+
+// IMPORTANT
+// THIS POINTS TO R2
 localVideo:
 `videos/${slug}.mp4`,
 
 
+
 quality:
 quality.quality,
+
 
 
 views:
@@ -302,20 +322,23 @@ old.view_count ??
 0,
 
 
+
 clipper:
-cleanName(
+cleanText(
  twitch.curator?.displayName ||
  old.creator_name ||
  "unknown"
 ),
 
 
+
 broadcaster:
-cleanName(
+cleanText(
  twitch.broadcaster?.displayName ||
  old.broadcaster_name ||
  "bams"
 ),
+
 
 
 createdAt:
@@ -324,10 +347,12 @@ old.created_at ||
 null,
 
 
+
 duration:
 twitch.durationSeconds ||
 old.duration ||
 null
+
 
 });
 
@@ -340,12 +365,14 @@ process.stdout.write(
 
 
 await new Promise(
-r=>setTimeout(r,100)
+ r=>setTimeout(r,100)
 );
+
 
 
 }
 catch(err){
+
 
 failures.push({
 
@@ -368,6 +395,7 @@ err.message
 
 
 }
+
 
 
 
@@ -410,6 +438,7 @@ console.log(
 
 
 }
+
 
 
 
