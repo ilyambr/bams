@@ -11,7 +11,9 @@ const BASE = window.location.pathname.endsWith("/")
       window.location.pathname.lastIndexOf("/") + 1
     );
 
-const api = (path) => `${BASE}${path.replace(/^\/+/, "")}`;
+function api(path) {
+  return `${BASE}${path.replace(/^\/+/, "")}`;
+}
 
 const params = new URLSearchParams(window.location.search);
 
@@ -28,6 +30,7 @@ let current = null;
 let fallbackTimer = null;
 let needsAudioGesture = false;
 
+
 if (fit === "contain") {
   video.style.objectFit = "contain";
 }
@@ -36,11 +39,13 @@ video.muted = muted;
 video.volume = Number(params.get("volume") || 1);
 
 
+
 function shuffle(items) {
   const copy = [...items];
 
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
+
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
 
@@ -48,9 +53,11 @@ function shuffle(items) {
 }
 
 
+
 function formatViews(value) {
   return `${Number(value || 0).toLocaleString()} Views`;
 }
+
 
 
 function formatDate(value) {
@@ -67,9 +74,11 @@ function formatDate(value) {
 }
 
 
+
 function setStatus(text) {
   statusEl.textContent = showStatus ? text : "";
 }
+
 
 
 function sleep(ms) {
@@ -77,65 +86,85 @@ function sleep(ms) {
 }
 
 
+
+
 async function startVideoPlayback() {
-  const wantsAudio = !muted;
 
   video.muted = muted;
 
   try {
+
     await video.play();
-    return;
-  } catch {}
-
-  if (!wantsAudio) return;
-
-  try {
-    video.muted = true;
-    await video.play();
-
-    needsAudioGesture = true;
-
-    setStatus("click to enable audio");
 
   } catch(error) {
 
-    setStatus(error.message);
+    if (muted) return;
+
+
+    try {
+
+      video.muted = true;
+
+      await video.play();
+
+      needsAudioGesture = true;
+
+      setStatus("click for audio");
+
+    } catch(e) {
+
+      setStatus(e.message);
+
+    }
 
   }
+
 }
+
+
 
 
 function startBrandIntro() {
 
   if (!brandBug) return;
 
+
   brandBug.classList.remove(
     "intro",
     "ready"
   );
 
+
   void brandBug.offsetWidth;
 
+
   brandBug.classList.add("intro");
+
 
   setTimeout(() => {
 
     brandBug.classList.remove("intro");
+
     brandBug.classList.add("ready");
 
   },1300);
+
 }
 
 
-function nextClip(){
 
-  if(!order.length)
+
+function nextClip() {
+
+  if (!order.length) {
+    order = shuffle(clips);
+  }
+
+
+  if (orderIndex >= order.length) {
+
     order = shuffle(clips);
 
-
-  if(orderIndex >= order.length){
-
-    order = shuffle(clips);
     orderIndex = 0;
 
   }
@@ -149,13 +178,13 @@ function nextClip(){
 
 
 
-function playClip(clip){
+
+function playClip(clip) {
 
   clearTimeout(fallbackTimer);
 
 
-  title.textContent =
-    clip.title || "";
+  title.textContent = clip.title || "";
 
 
   meta.textContent =
@@ -171,13 +200,13 @@ function playClip(clip){
     Number(clip.duration || 0);
 
 
-  if(seconds > 0){
 
-    fallbackTimer =
-      setTimeout(
-        nextClip,
-        Math.max(4,seconds + .6) * 1000
-      );
+  if (seconds > 0) {
+
+    fallbackTimer = setTimeout(
+      nextClip,
+      Math.max(4, seconds + .6) * 1000
+    );
 
   }
 
@@ -185,33 +214,44 @@ function playClip(clip){
 
 
 
-async function refreshAndPlay(clip){
+
+
+async function refreshAndPlay(clip) {
 
   try {
 
-    let source =
-      clip.localVideo ||
-      clip.videoUrl;
+    let source;
 
 
-    if(!clip.localVideo){
+    /*
+      LOCAL R2/Render videos:
+      /videos/file.mp4
+      becomes
+      /bams/clips/videos/file.mp4
+    */
 
-      const res =
-        await fetch(
-          api(
-            `/api/source/${encodeURIComponent(clip.id)}?v=${Date.now()}`
-          )
-        );
+    if (clip.localVideo) {
+
+      source = api(clip.localVideo);
+
+    } else {
 
 
-      if(!res.ok)
+      const res = await fetch(
+        api(`/api/source/${encodeURIComponent(clip.id)}?v=${Date.now()}`)
+      );
+
+
+      if (!res.ok) {
+
         throw new Error(
           `source ${res.status}`
         );
 
+      }
 
-      const fresh =
-        await res.json();
+
+      const fresh = await res.json();
 
 
       Object.assign(
@@ -220,24 +260,40 @@ async function refreshAndPlay(clip){
       );
 
 
-      source =
-        clip.videoUrl;
+      source = clip.videoUrl;
 
     }
+
+
+
+    console.log(
+      "Playing video:",
+      source
+    );
+
 
 
     video.src = source;
 
     video.load();
 
+
     await startVideoPlayback();
 
 
-  } catch(error){
+
+  } catch(error) {
+
+
+    console.error(
+      error
+    );
+
 
     setStatus(
       `video error: ${error.message}`
     );
+
 
     setTimeout(
       nextClip,
@@ -247,6 +303,8 @@ async function refreshAndPlay(clip){
   }
 
 }
+
+
 
 
 
@@ -256,13 +314,15 @@ video.addEventListener(
 );
 
 
+
 video.addEventListener(
   "error",
   () => {
 
     setStatus(
-      `video error ${current?.id || ""}`
+      `video error: ${current?.id || ""}`
     );
+
 
     setTimeout(
       nextClip,
@@ -274,83 +334,100 @@ video.addEventListener(
 
 
 
+
+
 document.addEventListener(
   "visibilitychange",
   () => {
 
-    if(!document.hidden && video.paused)
+    if (!document.hidden && video.paused) {
+
       video.play().catch(()=>{});
+
+    }
 
   }
 );
+
+
 
 
 
 document.addEventListener(
   "pointerdown",
-  ()=>{
+  () => {
 
-    if(!needsAudioGesture || muted)
+
+    if (!needsAudioGesture || muted)
       return;
 
 
-    video.muted=false;
+    video.muted = false;
 
 
     video.play()
-      .then(()=>{
+      .then(() => {
 
-        needsAudioGesture=false;
+        needsAudioGesture = false;
 
       });
+
 
   }
 );
 
 
 
-async function init(){
-
-  const res =
-    await fetch(
-      api(
-        `data/clips.json?v=${Date.now()}`
-      )
-    );
 
 
-  const data =
-    await res.json();
 
 
-  clips =
-    data.clips || [];
+async function init() {
 
 
-  if(!clips.length)
+  const res = await fetch(
+    api(`data/clips.json?v=${Date.now()}`)
+  );
+
+
+  const data = await res.json();
+
+
+  clips = data.clips || [];
+
+
+
+  if (!clips.length) {
+
     throw new Error(
       "no clips loaded"
     );
 
-
-  order =
-    shuffle(clips);
+  }
 
 
-  setStatus(
-    startDelay
-      ? `starting in ${startDelay}s`
-      : ""
-  );
+
+  order = shuffle(clips);
 
 
-  if(startDelay)
+
+  if (startDelay) {
+
+    setStatus(
+      `starting in ${startDelay}s`
+    );
+
+
     await sleep(
       startDelay * 1000
     );
 
+  }
+
+
 
   startBrandIntro();
+
 
   nextClip();
 
@@ -358,14 +435,18 @@ async function init(){
 
 
 
+
+
 init()
-.catch(error=>{
+.catch(error => {
 
   title.textContent =
     "no clips loaded";
 
+
   meta.textContent =
     error.message;
+
 
   setStatus(
     error.message
