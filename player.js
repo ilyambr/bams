@@ -7,7 +7,6 @@ const brandBug = document.querySelector("#brandBug");
 
 const BASE = "/bams/clips/";
 
-
 const params = new URLSearchParams(location.search);
 
 const debug = params.has("debug");
@@ -15,27 +14,19 @@ const fit = params.get("fit");
 const startDelay = Number(params.get("startDelay") || 3);
 
 
-
 let clips = [];
 let queue = [];
 let index = 0;
 let current = null;
 let timer = null;
-let loading = false;
-let failedAttempts = 0;
 
 
 
+// OBS autoplay setup
 video.autoplay = true;
 video.playsInline = true;
 video.controls = false;
-video.preload = "auto";
-
-
-
-// OBS prefers this
 video.muted = false;
-
 
 
 if (fit === "contain") {
@@ -45,60 +36,48 @@ if (fit === "contain") {
 
 
 function api(path) {
-
-    return BASE + String(path)
-        .replace(/^\/+/, "");
-
+    return BASE + path.replace(/^\/+/, "");
 }
 
 
 
 function log(msg) {
-
-    console.log(msg);
-
     if (debug) {
         statusEl.textContent = msg;
     }
 
+    console.log(msg);
 }
 
 
 
-function sleep(ms) {
+function shuffle(arr) {
+    const copy = [...arr];
 
-    return new Promise(
-        r => setTimeout(r, ms)
-    );
+    for (let i = copy.length - 1; i > 0; i--) {
 
+        const j = Math.floor(Math.random() * (i + 1));
+
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+
+    return copy;
 }
 
 
 
-function shuffle(array) {
-
-    return [...array].sort(
-        () => Math.random() - .5
-    );
-
+function formatViews(v) {
+    return `${Number(v || 0).toLocaleString()} Views`;
 }
 
 
 
-function formatViews(value) {
+function formatDate(v) {
 
-    return `${Number(value || 0).toLocaleString()} Views`;
-
-}
-
-
-
-function formatDate(value) {
-
-    if (!value)
+    if (!v)
         return "";
 
-    return new Date(value)
+    return new Date(v)
         .toLocaleDateString(
             "en-US",
             {
@@ -107,7 +86,6 @@ function formatDate(value) {
                 year:"numeric"
             }
         );
-
 }
 
 
@@ -117,14 +95,14 @@ function showInfo(clip) {
     title.textContent =
         clip.title || "";
 
+
     meta.textContent =
         `${formatViews(clip.views)} • Clipped by ${clip.clipper || "unknown"} • ${formatDate(clip.createdAt)}`;
-
 }
 
 
 
-function intro() {
+function brandIntro() {
 
     if (!brandBug)
         return;
@@ -139,26 +117,55 @@ function intro() {
     void brandBug.offsetWidth;
 
 
-    brandBug.classList.add(
-        "intro"
-    );
+    brandBug.classList.add("intro");
 
 
     setTimeout(() => {
 
-        brandBug.classList.remove(
-            "intro"
-        );
+        brandBug.classList.remove("intro");
 
-        brandBug.classList.add(
-            "ready"
-        );
+        brandBug.classList.add("ready");
 
     },1300);
 
 }
 
 
+
+async function startPlayback() {
+
+    try {
+
+        video.muted = false;
+
+        await video.play();
+
+        log("playing with audio");
+
+
+    } catch(err) {
+
+
+        console.warn(
+            "Autoplay blocked",
+            err
+        );
+
+
+        // OBS normally never reaches here
+        // fallback so video still works
+
+        video.muted = true;
+
+        await video.play();
+
+        log(
+            "playing muted - browser blocked audio"
+        );
+
+    }
+
+}
 
 
 
@@ -173,6 +180,7 @@ function nextClip() {
     ) {
 
         queue = shuffle(clips);
+
         index = 0;
 
     }
@@ -182,110 +190,73 @@ function nextClip() {
         queue[index++];
 
 
-    playClip(current);
+    loadClip(current);
 
 }
 
 
 
 
-
-async function getVideoSource(clip) {
-
-
-    /*
-       Local videos:
-       /videos/file.mp4
-
-       becomes:
-
-       /bams/clips/videos/file.mp4
-    */
-
-
-    if (clip.localVideo) {
-
-        return api(
-            clip.localVideo
-        );
-
-    }
-
-
-
-    /*
-       Only fallback to Twitch if
-       there is no local copy
-    */
-
-
-    const response =
-        await fetch(
-            api(
-                `api/source/${encodeURIComponent(clip.id)}`
-            )
-        );
-
-
-    if (!response.ok) {
-
-        throw Error(
-            `source ${response.status}`
-        );
-
-    }
-
-
-    const data =
-        await response.json();
-
-
-    return data.videoUrl;
-
-}
-
-
-
-
-
-async function playClip(clip) {
-
-
-    if (loading)
-        return;
-
-
-    loading = true;
-
-
-    clearTimeout(timer);
+async function loadClip(clip) {
 
 
     showInfo(clip);
 
 
-
     try {
 
 
-        const source =
-            await getVideoSource(
-                clip
-            );
+        let source;
+
+
+        if (clip.localVideo) {
+
+
+            // /videos/file.mp4
+            // ->
+            // /bams/clips/videos/file.mp4
+
+            source =
+                api(clip.localVideo);
+
+
+        } else {
+
+
+            const response =
+                await fetch(
+                    api(
+                        `api/source/${encodeURIComponent(clip.id)}`
+                    )
+                );
+
+
+            if (!response.ok)
+                throw new Error(
+                    `source ${response.status}`
+                );
+
+
+            const data =
+                await response.json();
+
+
+            source =
+                data.videoUrl;
+
+        }
+
 
 
         log(
-            "Loading: " + source
+            "VIDEO: " + source
         );
 
 
 
         video.pause();
 
-
-        video.removeAttribute(
-            "src"
-        );
+        video.removeAttribute("src");
 
 
         video.src =
@@ -296,71 +267,43 @@ async function playClip(clip) {
 
 
 
-        await video.play();
+        await startPlayback();
 
 
 
-        log(
-            "Playing"
-        );
-
-
-
-        failedAttempts = 0;
-
-
-
-        timer =
-            setTimeout(
-                nextClip,
-                (
-                    Number(
-                        clip.duration || 20
-                    )
-                    + 1
-                ) * 1000
+        const duration =
+            Number(
+                clip.duration || 0
             );
 
 
+        if (duration) {
 
-    }
-    catch(err) {
+            timer =
+                setTimeout(
+                    nextClip,
+                    (duration + 1) * 1000
+                );
+
+        }
 
 
-        console.error(
-            err
-        );
+
+    } catch(err) {
 
 
-        failedAttempts++;
+        console.error(err);
 
 
         log(
-            "Failed: " + err.message
+            "ERROR: " + err.message
         );
 
 
-
-        /*
-          prevent request explosion
-        */
-
-        await sleep(
-            Math.min(
-                failedAttempts * 2000,
-                10000
-            )
+        setTimeout(
+            nextClip,
+            1000
         );
-
-
-        nextClip();
-
-    }
-
-
-    finally {
-
-        loading = false;
 
     }
 
@@ -381,30 +324,23 @@ video.addEventListener(
     "error",
     () => {
 
-
         console.error(
             video.error
         );
 
 
         log(
-            "video element error"
+            "VIDEO ERROR"
         );
-
-
-        clearTimeout(timer);
-
 
 
         setTimeout(
             nextClip,
-            3000
+            1000
         );
 
     }
 );
-
-
 
 
 
@@ -421,16 +357,8 @@ async function init() {
         );
 
 
-    if (!response.ok)
-        throw Error(
-            "clips.json failed"
-        );
-
-
-
     const data =
         await response.json();
-
 
 
     clips =
@@ -439,16 +367,14 @@ async function init() {
 
 
     if (!clips.length)
-        throw Error(
-            "no clips"
+        throw new Error(
+            "no clips loaded"
         );
 
 
 
     queue =
-        shuffle(
-            clips
-        );
+        shuffle(clips);
 
 
 
@@ -459,15 +385,19 @@ async function init() {
         );
 
 
-        await sleep(
-            startDelay * 1000
+        await new Promise(
+            r =>
+            setTimeout(
+                r,
+                startDelay * 1000
+            )
         );
 
     }
 
 
 
-    intro();
+    brandIntro();
 
 
     nextClip();
@@ -481,13 +411,11 @@ async function init() {
 init()
 .catch(err => {
 
-    console.error(
-        err
-    );
+    console.error(err);
 
 
     title.textContent =
-        "player error";
+        "no clips loaded";
 
 
     meta.textContent =
