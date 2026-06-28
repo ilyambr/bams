@@ -209,7 +209,14 @@ async function loadClip(clip) {
         let source;
 
 
-        if (clip.localVideo) {
+        if (clip.videoUrl) {
+
+
+            source =
+                clip.videoUrl;
+
+
+        } else if (clip.localVideo) {
 
 
             // /videos/file.mp4
