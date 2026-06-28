@@ -13,19 +13,17 @@ const root = __dirname;
 const port = Number(process.env.PORT || 4567);
 
 
+const R2_BUCKET = process.env.R2_BUCKET;
+
 
 const r2 = new S3Client({
   region: "auto",
   endpoint: process.env.R2_ENDPOINT,
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+  credentials:{
+    accessKeyId:process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey:process.env.R2_SECRET_ACCESS_KEY
   }
 });
-
-
-const R2_BUCKET = process.env.R2_BUCKET;
-
 
 
 const mime = {
@@ -33,13 +31,13 @@ const mime = {
   ".css":"text/css; charset=utf-8",
   ".js":"application/javascript; charset=utf-8",
   ".json":"application/json; charset=utf-8",
-  ".mp4":"video/mp4",
-  ".webm":"video/webm",
   ".png":"image/png",
   ".jpg":"image/jpeg",
-  ".svg":"image/svg+xml"
+  ".jpeg":"image/jpeg",
+  ".svg":"image/svg+xml",
+  ".mp4":"video/mp4",
+  ".webm":"video/webm"
 };
-
 
 
 const TWITCH_CLIENT =
@@ -47,35 +45,32 @@ const TWITCH_CLIENT =
 
 
 
-
-
-function send(res,status,body,type="text/plain; charset=utf-8") {
+function send(res,status,data,type="text/plain; charset=utf-8"){
 
   res.writeHead(status,{
     "Content-Type":type,
     "Cache-Control":"no-store"
   });
 
-  res.end(body);
+  res.end(data);
 
 }
-
-
-
 
 
 
 function sendFile(res,file){
 
   const ext =
-    path.extname(file)
-      .toLowerCase();
+    path.extname(file).toLowerCase();
 
 
   res.writeHead(200,{
     "Content-Type":
       mime[ext] ||
-      "application/octet-stream"
+      "application/octet-stream",
+
+    "Cache-Control":
+      "public,max-age=3600"
   });
 
 
@@ -92,8 +87,8 @@ function sendFile(res,file){
 
 async function twitchClip(slug){
 
-  const query = `
-query($slug: ID!) {
+const query = `
+query($slug: ID!){
  clip(slug:$slug){
   slug
   title
@@ -101,15 +96,15 @@ query($slug: ID!) {
   createdAt
   durationSeconds
 
-  broadcaster {
+  broadcaster{
     displayName
   }
 
-  curator {
+  curator{
     displayName
   }
 
-  videoQualities {
+  videoQualities{
     quality
     sourceURL
   }
@@ -118,64 +113,74 @@ query($slug: ID!) {
 `;
 
 
-  const response =
-    await fetch(
-      "https://gql.twitch.tv/gql",
-      {
-        method:"POST",
-        headers:{
-          "Client-ID":TWITCH_CLIENT,
-          "Content-Type":"application/json"
-        },
-        body:JSON.stringify({
-          query,
-          variables:{
-            slug
-          }
-        })
-      }
-    );
+const response =
+await fetch(
+"https://gql.twitch.tv/gql",
+{
+method:"POST",
+headers:{
+"Client-ID":TWITCH_CLIENT,
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+query,
+variables:{slug}
+})
+}
+);
 
 
-  const json =
-    await response.json();
+const json =
+await response.json();
 
 
-  if(!response.ok || json.errors)
-    throw Error(
-      JSON.stringify(json.errors || json)
-    );
+if(json.errors)
+throw Error(
+JSON.stringify(json.errors)
+);
 
 
-  const clip =
-    json.data.clip;
+const clip =
+json.data.clip;
 
 
-  const quality =
-    [...clip.videoQualities]
-      .sort(
-        (a,b)=>
-          Number(b.quality)-Number(a.quality)
-      )[0];
+const video =
+[...(clip.videoQualities || [])]
+.sort(
+(a,b)=>
+Number(b.quality)-Number(a.quality)
+)[0];
 
 
-  return {
-    id:clip.slug,
-    title:clip.title,
-    videoUrl:quality.sourceURL,
-    views:clip.viewCount,
-    clipper:
-      clip.curator?.displayName ||
-      "unknown",
-    broadcaster:
-      clip.broadcaster?.displayName ||
-      "bams",
-    createdAt:clip.createdAt,
-    duration:clip.durationSeconds
-  };
+return {
+
+id:clip.slug,
+
+title:clip.title,
+
+videoUrl:
+video.sourceURL,
+
+views:
+clip.viewCount,
+
+clipper:
+clip.curator?.displayName ||
+"unknown",
+
+broadcaster:
+clip.broadcaster?.displayName ||
+"bams",
+
+createdAt:
+clip.createdAt,
+
+duration:
+clip.durationSeconds
+
+};
 
 }
-
 
 
 
@@ -186,135 +191,128 @@ query($slug: ID!) {
 
 async function streamVideo(req,res,file){
 
-  const key =
-    `clips/${file}`;
+const key =
+`clips/${file}`;
 
 
-  try {
+try{
 
 
-    const head =
-      await r2.send(
-        new HeadObjectCommand({
-          Bucket:R2_BUCKET,
-          Key:key
-        })
-      );
+const head =
+await r2.send(
+new HeadObjectCommand({
+Bucket:R2_BUCKET,
+Key:key
+})
+);
 
 
-    const size =
-      Number(head.ContentLength);
+const size =
+Number(head.ContentLength);
 
 
-
-    let start = 0;
-    let end = size - 1;
-
-
-    const range =
-      req.headers.range;
+let start=0;
+let end=size-1;
 
 
-
-    if(range){
-
-      const match =
-        range.match(
-          /bytes=(\d+)-(\d*)/
-        );
+const range =
+req.headers.range;
 
 
-      if(match){
+if(range){
 
-        start =
-          Number(match[1]);
-
-        if(match[2])
-          end =
-            Number(match[2]);
-
-      }
+const match =
+range.match(
+/bytes=(\d+)-(\d*)/
+);
 
 
-    }
+if(match){
+
+start =
+Number(match[1]);
+
+if(match[2])
+end =
+Number(match[2]);
+
+}
+
+}
 
 
 
-    const object =
-      await r2.send(
-        new GetObjectCommand({
-          Bucket:R2_BUCKET,
-          Key:key,
-          Range:
-            `bytes=${start}-${end}`
-        })
-      );
+const object =
+await r2.send(
+new GetObjectCommand({
+Bucket:R2_BUCKET,
+Key:key,
+Range:`bytes=${start}-${end}`
+})
+);
 
 
 
-    const headers = {
+const headers={
 
-      "Content-Type":
-        "video/mp4",
+"Content-Type":
+"video/mp4",
 
-      "Accept-Ranges":
-        "bytes",
+"Accept-Ranges":
+"bytes",
 
-      "Content-Length":
-        end-start+1,
+"Content-Length":
+end-start+1,
 
-      "Cache-Control":
-        "public,max-age=3600"
+"Cache-Control":
+"public,max-age=3600"
 
-    };
-
-
-
-    if(range){
-
-      headers["Content-Range"] =
-        `bytes ${start}-${end}/${size}`;
-
-
-      res.writeHead(
-        206,
-        headers
-      );
-
-    }
-    else{
-
-      res.writeHead(
-        200,
-        headers
-      );
-
-    }
+};
 
 
 
-    if(req.method !== "HEAD")
-      object.Body.pipe(res);
-    else
-      res.end();
+if(range){
+
+headers["Content-Range"] =
+`bytes ${start}-${end}/${size}`;
+
+
+res.writeHead(
+206,
+headers
+);
+
+}else{
+
+res.writeHead(
+200,
+headers
+);
+
+}
 
 
 
-  }
-  catch(err){
+if(req.method !== "HEAD")
+object.Body.pipe(res);
+else
+res.end();
 
-    console.error(
-      "VIDEO ERROR",
-      err
-    );
 
-    send(
-      res,
-      404,
-      "video missing"
-    );
 
-  }
+}
+catch(err){
+
+console.error(err);
+
+send(
+res,
+404,
+"video missing"
+);
+
+}
+
 
 }
 
@@ -329,207 +327,199 @@ async function streamVideo(req,res,file){
 http.createServer(async(req,res)=>{
 
 
-  const url =
-    new URL(
-      req.url,
-      `http://${req.headers.host}`
-    );
+const url =
+new URL(
+req.url,
+`http://${req.headers.host}`
+);
 
 
-  let pathname =
-    decodeURIComponent(
-      url.pathname
-    );
+let pathname =
+decodeURIComponent(
+url.pathname
+);
 
 
 
 
+// redirect missing slash
 
-  /*
-    FIX:
-    /bams/clips
-    -> /bams/clips/
-  */
+if(pathname === "/bams/clips"){
 
+res.writeHead(301,{
+Location:"/bams/clips/"
+});
 
-  if(
-    pathname === "/bams/clips"
-  ){
+return res.end();
 
-    res.writeHead(
-      301,
-      {
-        Location:
-        "/bams/clips/"
-      }
-    );
+}
 
-    return res.end();
 
-  }
 
 
 
+// Twitch API
 
+if(
+pathname.includes("/api/source/")
+){
 
+const slug =
+pathname.split("/api/source/")[1];
 
 
+try{
 
-  /*
-    Twitch fallback
-  */
+return send(
+res,
+200,
+JSON.stringify(
+await twitchClip(slug)
+),
+"application/json; charset=utf-8"
+);
 
 
-  if(
-    pathname.startsWith(
-      "/bams/clips/api/source/"
-    )
-  ){
+}catch(e){
 
-    const slug =
-      pathname.split("/").pop();
+return send(
+res,
+502,
+JSON.stringify({
+error:e.message
+}),
+"application/json; charset=utf-8"
+);
 
+}
 
-    try{
+}
 
-      return send(
-        res,
-        200,
-        JSON.stringify(
-          await twitchClip(slug)
-        ),
-        "application/json; charset=utf-8"
-      );
 
 
-    }
-    catch(err){
 
-      return send(
-        res,
-        502,
-        JSON.stringify({
-          error:err.message
-        }),
-        "application/json; charset=utf-8"
-      );
 
-    }
+// R2 videos
 
-  }
+if(
+pathname.includes("/videos/")
+){
 
+const file =
+pathname.split("/videos/")[1];
 
 
+return streamVideo(
+req,
+res,
+file
+);
 
+}
 
 
 
 
-  /*
-    VIDEO ROUTES
 
-    supports:
 
-    /videos/file.mp4
 
-    /bams/clips/videos/file.mp4
+// STATIC FILES
 
-  */
 
+let clean =
+pathname;
 
-  if(
-    pathname.includes("/videos/")
-  ){
 
-    const file =
-      pathname.split("/videos/")[1];
+// remove prefix
+clean =
+clean.replace(
+"/bams/clips",
+""
+);
 
 
-    return streamVideo(
-      req,
-      res,
-      file
-    );
+// remove slash
 
-  }
+clean =
+clean.replace(
+(/^\/+/),
+""
+);
 
 
 
+if(!clean)
+clean="index.html";
 
 
 
+const file =
+path.resolve(
+root,
+clean
+);
 
 
 
-  /*
-    STATIC FILES
-  */
+if(
+!file.startsWith(root)
+){
 
+return send(
+res,
+403,
+"forbidden"
+);
 
-  let clean =
-    pathname
-      .replace(/^\/bams\/clips\/?/,"");
+}
 
 
-  if(!clean)
-    clean="index.html";
 
+if(
+!fs.existsSync(file)
+){
 
+console.log(
+"MISSING:",
+file
+);
 
-  const file =
-    path.join(
-      root,
-      clean
-    );
+return send(
+res,
+404,
+"not found"
+);
 
+}
 
 
-  if(
-    !file.startsWith(root)
-  )
-    return send(
-      res,
-      403,
-      "forbidden"
-    );
 
+if(
+fs.statSync(file).isDirectory()
+){
 
+return send(
+res,
+404,
+"directory"
+);
 
-  if(
-    !fs.existsSync(file)
-  )
-    return send(
-      res,
-      404,
-      "not found"
-    );
+}
 
 
 
-  if(
-    fs.statSync(file).isDirectory()
-  )
-    return send(
-      res,
-      404,
-      "directory"
-    );
-
-
-
-  sendFile(
-    res,
-    file
-  );
+sendFile(
+res,
+file
+);
 
 
 
 })
 .listen(
-  port,
-  ()=>{
-    console.log(
-      `running on ${port}`
-    );
-  }
+port,
+()=>{
+console.log(
+`running on ${port}`
 );
+});
