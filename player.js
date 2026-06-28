@@ -1,375 +1,429 @@
-const fs = require("fs");
-const path = require("path");
-
-const root = path.join(__dirname, "..");
-
-const sourceList =
-  "C:/Users/Administrator/Downloads/twitch clips.txt";
-
-const outPath =
-  path.join(root, "data", "clips.json");
+const video = document.querySelector("#clipVideo");
+const title = document.querySelector("#clipTitle");
+const meta = document.querySelector("#clipMeta");
+const statusEl = document.querySelector("#status");
+const brandBug = document.querySelector("#brandBug");
 
 
-const clientId =
-  "kimne78kx3ncx6brgo4mv6wki5h1ko";
+const BASE = "/bams/clips/";
+
+const params = new URLSearchParams(location.search);
+
+const debug = params.has("debug");
+const fit = params.get("fit");
+const startDelay = Number(params.get("startDelay") || 3);
 
 
-const R2_URL =
-  "https://pub-2338fa951f8543d9a8e7c06bf364710f.r2.dev";
+let clips = [];
+let queue = [];
+let index = 0;
+let current = null;
+let timer = null;
 
 
 
-function slugFromUrl(url) {
+// OBS autoplay setup
+video.autoplay = true;
+video.playsInline = true;
+video.controls = false;
+video.muted = false;
 
-  return String(url)
-    .trim()
-    .split("/clip/")[1]
-    ?.split(/[?#]/)[0];
+
+if (fit === "contain") {
+    video.style.objectFit = "contain";
+}
+
+
+
+function api(path) {
+    return BASE + path.replace(/^\/+/, "");
+}
+
+
+
+function log(msg) {
+    if (debug) {
+        statusEl.textContent = msg;
+    }
+
+    console.log(msg);
+}
+
+
+
+function shuffle(arr) {
+    const copy = [...arr];
+
+    for (let i = copy.length - 1; i > 0; i--) {
+
+        const j = Math.floor(Math.random() * (i + 1));
+
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+
+    return copy;
+}
+
+
+
+function formatViews(v) {
+    return `${Number(v || 0).toLocaleString()} Views`;
+}
+
+
+
+function formatDate(v) {
+
+    if (!v)
+        return "";
+
+    return new Date(v)
+        .toLocaleDateString(
+            "en-US",
+            {
+                month:"short",
+                day:"numeric",
+                year:"numeric"
+            }
+        );
+}
+
+
+
+function showInfo(clip) {
+
+    title.textContent =
+        clip.title || "";
+
+
+    meta.textContent =
+        `${formatViews(clip.views)} • Clipped by ${clip.clipper || "unknown"} • ${formatDate(clip.createdAt)}`;
+}
+
+
+
+function brandIntro() {
+
+    if (!brandBug)
+        return;
+
+
+    brandBug.classList.remove(
+        "intro",
+        "ready"
+    );
+
+
+    void brandBug.offsetWidth;
+
+
+    brandBug.classList.add("intro");
+
+
+    setTimeout(() => {
+
+        brandBug.classList.remove("intro");
+
+        brandBug.classList.add("ready");
+
+    },1300);
 
 }
 
 
 
-function cleanText(value) {
+async function startPlayback() {
 
-  if (!value)
-    return "";
+    try {
 
-  return String(value)
-    .normalize("NFC")
-    .replace(/\s+/g, " ")
-    .trim();
+        video.muted = false;
 
-}
+        await video.play();
+
+        log("playing with audio");
 
 
-
-function findPart(index) {
-
-  const part =
-    Math.floor(index / 1000) + 1;
-
-  return `part-${String(part).padStart(2,"0")}`;
-
-}
+    } catch(err) {
 
 
+        console.warn(
+            "Autoplay blocked",
+            err
+        );
 
-function bestQuality(list) {
 
-  return [...(list || [])]
-    .filter(
-      x => x.sourceURL
-    )
-    .sort(
-      (a,b)=>
-        Number(b.quality || 0)
-        -
-        Number(a.quality || 0)
-    )[0];
+        // OBS normally never reaches here
+        // fallback so video still works
+
+        video.muted = true;
+
+        await video.play();
+
+        log(
+            "playing muted - browser blocked audio"
+        );
+
+    }
 
 }
 
 
 
-async function fetchClip(slug) {
+function nextClip() {
+
+    clearTimeout(timer);
 
 
-const query = `
-query($slug: ID!){
- clip(slug:$slug){
+    if (
+        !queue.length ||
+        index >= queue.length
+    ) {
 
-  slug
-  title
-  viewCount
-  createdAt
-  durationSeconds
+        queue = shuffle(clips);
 
-  broadcaster{
-    displayName
-  }
+        index = 0;
 
-  curator{
-    displayName
-  }
+    }
 
-  videoQualities{
-    quality
-    sourceURL
-  }
 
- }
+    current =
+        queue[index++];
+
+
+    loadClip(current);
+
 }
-`;
 
 
 
-const res =
-await fetch(
-  "https://gql.twitch.tv/gql",
-  {
-    method:"POST",
 
-    headers:{
-      "Client-ID":clientId,
-      "Content-Type":"application/json"
-    },
+async function loadClip(clip) {
 
-    body:JSON.stringify({
-      query,
-      variables:{
-        slug
-      }
-    })
-  }
+
+    showInfo(clip);
+
+
+    try {
+
+
+        let source;
+
+
+        if (clip.localVideo) {
+
+
+            // /videos/file.mp4
+            // ->
+            // /bams/clips/videos/file.mp4
+
+            source =
+                api(clip.localVideo);
+
+
+        } else {
+
+
+            const response =
+                await fetch(
+                    api(
+                        `api/source/${encodeURIComponent(clip.id)}`
+                    )
+                );
+
+
+            if (!response.ok)
+                throw new Error(
+                    `source ${response.status}`
+                );
+
+
+            const data =
+                await response.json();
+
+
+            source =
+                data.videoUrl;
+
+        }
+
+
+
+        log(
+            "VIDEO: " + source
+        );
+
+
+
+        video.pause();
+
+        video.removeAttribute("src");
+
+
+        video.src =
+            source;
+
+
+        video.load();
+
+
+
+        await startPlayback();
+
+
+
+        const duration =
+            Number(
+                clip.duration || 0
+            );
+
+
+        if (duration) {
+
+            timer =
+                setTimeout(
+                    nextClip,
+                    (duration + 1) * 1000
+                );
+
+        }
+
+
+
+    } catch(err) {
+
+
+        console.error(err);
+
+
+        log(
+            "ERROR: " + err.message
+        );
+
+
+        setTimeout(
+            nextClip,
+            1000
+        );
+
+    }
+
+}
+
+
+
+
+
+video.addEventListener(
+    "ended",
+    nextClip
 );
 
 
 
-const json =
-await res.json();
+video.addEventListener(
+    "error",
+    () => {
+
+        console.error(
+            video.error
+        );
 
 
-
-if(
-  !res.ok ||
-  json.errors ||
-  !json.data?.clip
-){
-
-throw new Error(
-  JSON.stringify(json.errors || json)
-);
-
-}
+        log(
+            "VIDEO ERROR"
+        );
 
 
-return json.data.clip;
+        setTimeout(
+            nextClip,
+            1000
+        );
 
-}
-
-
-
-
-async function main(){
-
-
-const urls =
-fs.readFileSync(
-  sourceList,
-  "utf8"
-)
-.split(/\r?\n/)
-.map(x=>x.trim())
-.filter(Boolean);
-
-
-
-const clips = [];
-const failures = [];
-
-
-
-
-for(
- let i=0;
- i<urls.length;
- i++
-){
-
-
-const twitchUrl =
-urls[i];
-
-
-const slug =
-slugFromUrl(twitchUrl);
-
-
-
-if(!slug)
- continue;
-
-
-
-try{
-
-
-const twitch =
-await fetchClip(slug);
-
-
-
-const quality =
-bestQuality(
- twitch.videoQualities
+    }
 );
 
 
 
-const part =
-findPart(i);
+
+
+async function init() {
+
+
+    const response =
+        await fetch(
+            api(
+                "data/clips.json?v=" + Date.now()
+            )
+        );
+
+
+    const data =
+        await response.json();
+
+
+    clips =
+        data.clips || [];
 
 
 
-const filename =
-`${slug}.mp4`;
+    if (!clips.length)
+        throw new Error(
+            "no clips loaded"
+        );
 
 
 
-const r2Video =
-`${R2_URL}/${part}/${filename}`;
+    queue =
+        shuffle(clips);
 
 
 
-clips.push({
+    if (startDelay) {
 
-id:slug,
-
-
-// Twitch metadata
-url:twitchUrl,
+        log(
+            `starting in ${startDelay}s`
+        );
 
 
-title:
-cleanText(
- twitch.title
-),
+        await new Promise(
+            r =>
+            setTimeout(
+                r,
+                startDelay * 1000
+            )
+        );
 
-
-
-// THIS IS THE PLAYER VIDEO
-videoUrl:r2Video,
+    }
 
 
 
-quality:
-quality?.quality || null,
+    brandIntro();
 
 
-
-views:
-twitch.viewCount || 0,
-
-
-
-clipper:
-cleanText(
- twitch.curator?.displayName
- ||
- "unknown"
-),
-
-
-
-broadcaster:
-cleanText(
- twitch.broadcaster?.displayName
- ||
- "bams"
-),
-
-
-
-createdAt:
-twitch.createdAt || null,
-
-
-
-duration:
-twitch.durationSeconds || null
-
-});
-
-
-
-process.stdout.write(
-`\r${i+1}/${urls.length}`
-);
-
-
-
-await new Promise(
- r=>setTimeout(r,100)
-);
-
-
-
-}
-catch(err){
-
-
-failures.push({
-
-slug,
-
-error:
-err.message
-
-});
-
-
-console.log(
-"\nFAILED",
-slug,
-err.message
-);
-
-
-}
-
+    nextClip();
 
 }
 
 
 
-fs.mkdirSync(
-path.dirname(outPath),
-{
-recursive:true
-}
-);
 
 
+init()
+.catch(err => {
 
-fs.writeFileSync(
-
-outPath,
-
-JSON.stringify(
-{
-generatedAt:
-new Date().toISOString(),
-
-clips,
-
-failures
-
-},
-null,
-2
-),
-
-"utf8"
-
-);
+    console.error(err);
 
 
-
-console.log(
-`\nSaved ${clips.length} clips`
-);
+    title.textContent =
+        "no clips loaded";
 
 
-}
+    meta.textContent =
+        err.message;
 
 
-
-main()
-.catch(err=>{
-
-console.error(err);
-
-process.exit(1);
+    log(
+        err.message
+    );
 
 });
