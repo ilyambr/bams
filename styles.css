@@ -1,0 +1,129 @@
+:root {
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.82);
+  --shadow: rgba(0, 0, 0, 0.72);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#stage {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #000;
+  font-family: Inter, Segoe UI, Arial, sans-serif;
+}
+
+#stage {
+  position: relative;
+}
+
+#clipVideo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+#shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.62), transparent 34%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.38), transparent 36%);
+}
+
+#clipInfo {
+  position: absolute;
+  left: clamp(18px, 2.4vw, 42px);
+  bottom: clamp(18px, 3vh, 36px);
+  max-width: min(680px, 54vw);
+  color: var(--text);
+  text-shadow: 0 3px 18px var(--shadow), 0 1px 2px #000;
+}
+
+#clipTitle {
+  display: -webkit-box;
+  margin: 0 0 6px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: clamp(22px, 2.15vw, 40px);
+  line-height: 1.08;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+}
+
+#clipMeta {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: clamp(13px, 0.95vw, 18px);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#brandBug {
+  position: absolute;
+  right: clamp(14px, 2vw, 32px);
+  bottom: clamp(10px, 1.7vh, 24px);
+  width: clamp(96px, 8vw, 150px);
+  height: clamp(40px, 4vw, 70px);
+  filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.62));
+}
+
+#brandBug img {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+#brandBug.intro #ilyambrLogo {
+  animation: ilyambrIntro 1.25s ease forwards;
+}
+
+#brandBug.intro #bamsLogo {
+  animation: bamsIntro 1.25s ease forwards;
+}
+
+#brandBug.ready #bamsLogo {
+  opacity: 1;
+}
+
+#status {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  color: rgba(255, 255, 255, 0.75);
+  font: 13px/1.4 Consolas, monospace;
+  text-shadow: 0 2px 8px #000;
+}
+
+@keyframes ilyambrIntro {
+  0% { opacity: 0; transform: translateY(-50%) scale(0.96); }
+  12% { opacity: 1; transform: translateY(-50%) scale(1); }
+  62% { opacity: 1; transform: translateY(-50%) scale(1); }
+  100% { opacity: 0; transform: translateY(-50%) scale(0.98); }
+}
+
+@keyframes bamsIntro {
+  0%, 58% { opacity: 0; transform: translateY(-50%) scale(0.98); }
+  100% { opacity: 1; transform: translateY(-50%) scale(1); }
+}

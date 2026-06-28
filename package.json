@@ -1,0 +1,10 @@
+{
+  "name": "clip-player",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build-data": "node scripts/build-data.js",
+    "download-videos": "node scripts/download-videos.js",
+    "start": "node server.js"
+  }
+}
