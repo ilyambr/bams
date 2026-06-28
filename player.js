@@ -4,452 +4,373 @@ const meta = document.querySelector("#clipMeta");
 const statusEl = document.querySelector("#status");
 const brandBug = document.querySelector("#brandBug");
 
-const BASE = window.location.pathname.endsWith("/")
-  ? window.location.pathname
-  : window.location.pathname.substring(
-      0,
-      window.location.pathname.lastIndexOf("/") + 1
-    );
+const BASE = "/bams/clips/";
 
-function api(path) {
-  return `${BASE}${path.replace(/^\/+/, "")}`;
-}
+const params = new URLSearchParams(location.search);
 
-const params = new URLSearchParams(window.location.search);
-
-const fit = params.get("fit");
 const showStatus = params.has("debug");
 const muted = params.get("muted") === "1";
-const clipDuration = Number(params.get("duration") || 0);
-const startDelay = Number(params.get("startDelay") ?? 3);
+const fit = params.get("fit");
+const startDelay = Number(params.get("startDelay") || 3);
 
 let clips = [];
-let order = [];
-let orderIndex = 0;
+let queue = [];
+let index = 0;
 let current = null;
-let fallbackTimer = null;
-let needsAudioGesture = false;
+let timer = null;
+let needsAudio = false;
 
 
 if (fit === "contain") {
-  video.style.objectFit = "contain";
+    video.style.objectFit = "contain";
 }
 
 video.muted = muted;
-video.volume = Number(params.get("volume") || 1);
 
 
 
-function shuffle(items) {
-  const copy = [...items];
-
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-
-  return copy;
+function api(path) {
+    return BASE + path.replace(/^\/+/, "");
 }
 
 
 
-function formatViews(value) {
-  return `${Number(value || 0).toLocaleString()} Views`;
-}
-
-
-
-function formatDate(value) {
-  if (!value) return "";
-
-  return new Date(value).toLocaleDateString(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-      year: "numeric"
+function status(msg) {
+    if (showStatus) {
+        statusEl.textContent = msg;
     }
-  );
 }
 
 
 
-function setStatus(text) {
-  statusEl.textContent = showStatus ? text : "";
+function shuffle(arr) {
+    return [...arr].sort(() => Math.random() - 0.5);
 }
 
 
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function views(v) {
+    return `${Number(v || 0).toLocaleString()} Views`;
 }
 
 
 
+function date(v) {
+    if (!v) return "";
 
-async function startVideoPlayback() {
+    return new Date(v).toLocaleDateString(
+        "en-US",
+        {
+            month:"short",
+            day:"numeric",
+            year:"numeric"
+        }
+    );
+}
 
-  video.muted = muted;
 
-  try {
 
-    await video.play();
+async function playVideo() {
 
-  } catch(error) {
+    try {
 
-    if (muted) return;
+        video.muted = muted;
+
+        await video.play();
+
+    } catch {
+
+        if (!muted) {
+
+            video.muted = true;
+
+            await video.play();
+
+            needsAudio = true;
+
+            status("click for audio");
+
+        }
+
+    }
+
+}
+
+
+
+function intro() {
+
+    if (!brandBug) return;
+
+    brandBug.classList.remove(
+        "intro",
+        "ready"
+    );
+
+    void brandBug.offsetWidth;
+
+    brandBug.classList.add("intro");
+
+
+    setTimeout(() => {
+
+        brandBug.classList.remove("intro");
+
+        brandBug.classList.add("ready");
+
+    },1300);
+
+}
+
+
+
+function next() {
+
+    if (!queue.length || index >= queue.length) {
+
+        queue = shuffle(clips);
+
+        index = 0;
+
+    }
+
+
+    current = queue[index++];
+
+    loadClip(current);
+
+}
+
+
+
+function showInfo(clip) {
+
+    title.textContent =
+        clip.title || "";
+
+
+    meta.textContent =
+        `${views(clip.views)} • Clipped by ${clip.clipper || "unknown"} • ${date(clip.createdAt)}`;
+
+}
+
+
+
+async function loadClip(clip) {
+
+    clearTimeout(timer);
+
+    showInfo(clip);
 
 
     try {
 
-      video.muted = true;
+        let src;
 
-      await video.play();
 
-      needsAudioGesture = true;
+        if (clip.localVideo) {
 
-      setStatus("click for audio");
 
-    } catch(e) {
+            /*
+             * IMPORTANT:
+             *
+             * JSON:
+             * /videos/file.mp4
+             *
+             * becomes:
+             * /bams/clips/videos/file.mp4
+             */
 
-      setStatus(e.message);
+            src = api(clip.localVideo);
 
-    }
 
-  }
+        } else {
 
-}
 
+            const r = await fetch(
+                api(
+                    `api/source/${encodeURIComponent(clip.id)}`
+                )
+            );
 
 
+            if (!r.ok) {
 
-function startBrandIntro() {
+                throw new Error(
+                    `source ${r.status}`
+                );
 
-  if (!brandBug) return;
+            }
 
 
-  brandBug.classList.remove(
-    "intro",
-    "ready"
-  );
+            const data = await r.json();
 
+            src = data.videoUrl;
 
-  void brandBug.offsetWidth;
+        }
 
 
-  brandBug.classList.add("intro");
-
-
-  setTimeout(() => {
-
-    brandBug.classList.remove("intro");
-
-    brandBug.classList.add("ready");
-
-  },1300);
-
-}
-
-
-
-
-function nextClip() {
-
-  if (!order.length) {
-    order = shuffle(clips);
-  }
-
-
-  if (orderIndex >= order.length) {
-
-    order = shuffle(clips);
-
-    orderIndex = 0;
-
-  }
-
-
-  current = order[orderIndex++];
-
-  playClip(current);
-
-}
-
-
-
-
-function playClip(clip) {
-
-  clearTimeout(fallbackTimer);
-
-
-  title.textContent = clip.title || "";
-
-
-  meta.textContent =
-    `${formatViews(clip.views)} • Clipped by ${clip.clipper || "unknown"} • ${formatDate(clip.createdAt)}`;
-
-
-  refreshAndPlay(clip);
-
-
-
-  const seconds =
-    clipDuration ||
-    Number(clip.duration || 0);
-
-
-
-  if (seconds > 0) {
-
-    fallbackTimer = setTimeout(
-      nextClip,
-      Math.max(4, seconds + .6) * 1000
-    );
-
-  }
-
-}
-
-
-
-
-
-async function refreshAndPlay(clip) {
-
-  try {
-
-    let source;
-
-
-    /*
-      LOCAL R2/Render videos:
-      /videos/file.mp4
-      becomes
-      /bams/clips/videos/file.mp4
-    */
-
-    if (clip.localVideo) {
-
-      source = api(clip.localVideo);
-
-    } else {
-
-
-      const res = await fetch(
-        api(`/api/source/${encodeURIComponent(clip.id)}?v=${Date.now()}`)
-      );
-
-
-      if (!res.ok) {
-
-        throw new Error(
-          `source ${res.status}`
+        console.log(
+            "VIDEO:",
+            src
         );
 
-      }
+
+        video.pause();
+
+        video.src = src;
+
+        video.load();
 
 
-      const fresh = await res.json();
+        await playVideo();
 
 
-      Object.assign(
-        clip,
-        fresh
-      );
+        const duration =
+            Number(
+                clip.duration || 0
+            );
 
 
-      source = clip.videoUrl;
+        if (duration) {
+
+            timer = setTimeout(
+                next,
+                (duration + 1) * 1000
+            );
+
+        }
+
+
+    } catch(err) {
+
+
+        console.error(err);
+
+        status(
+            err.message
+        );
+
+
+        setTimeout(
+            next,
+            1000
+        );
 
     }
-
-
-
-    console.log(
-      "Playing video:",
-      source
-    );
-
-
-
-    video.src = source;
-
-    video.load();
-
-
-    await startVideoPlayback();
-
-
-
-  } catch(error) {
-
-
-    console.error(
-      error
-    );
-
-
-    setStatus(
-      `video error: ${error.message}`
-    );
-
-
-    setTimeout(
-      nextClip,
-      1000
-    );
-
-  }
 
 }
 
 
 
+video.onended = next;
 
 
-video.addEventListener(
-  "ended",
-  nextClip
-);
+video.onerror = () => {
 
-
-
-video.addEventListener(
-  "error",
-  () => {
-
-    setStatus(
-      `video error: ${current?.id || ""}`
+    console.error(
+        video.error
     );
 
+    status(
+        "video failed"
+    );
 
     setTimeout(
-      nextClip,
-      1000
+        next,
+        1000
     );
 
-  }
-);
-
-
+};
 
 
 
 document.addEventListener(
-  "visibilitychange",
-  () => {
+    "pointerdown",
+    () => {
 
-    if (!document.hidden && video.paused) {
+        if (!needsAudio)
+            return;
 
-      video.play().catch(()=>{});
+
+        video.muted = false;
+
+
+        video.play()
+            .then(() => {
+
+                needsAudio = false;
+
+            });
 
     }
-
-  }
 );
-
-
-
-
-
-document.addEventListener(
-  "pointerdown",
-  () => {
-
-
-    if (!needsAudioGesture || muted)
-      return;
-
-
-    video.muted = false;
-
-
-    video.play()
-      .then(() => {
-
-        needsAudioGesture = false;
-
-      });
-
-
-  }
-);
-
-
-
-
 
 
 
 async function init() {
 
 
-  const res = await fetch(
-    api(`data/clips.json?v=${Date.now()}`)
-  );
-
-
-  const data = await res.json();
-
-
-  clips = data.clips || [];
-
-
-
-  if (!clips.length) {
-
-    throw new Error(
-      "no clips loaded"
-    );
-
-  }
-
-
-
-  order = shuffle(clips);
-
-
-
-  if (startDelay) {
-
-    setStatus(
-      `starting in ${startDelay}s`
+    const r = await fetch(
+        api(
+            "data/clips.json?v=" + Date.now()
+        )
     );
 
 
-    await sleep(
-      startDelay * 1000
-    );
-
-  }
+    const data = await r.json();
 
 
+    clips =
+        data.clips || [];
 
-  startBrandIntro();
+
+    if (!clips.length) {
+
+        throw new Error(
+            "no clips loaded"
+        );
+
+    }
 
 
-  nextClip();
+    queue = shuffle(clips);
+
+
+    if (startDelay) {
+
+        status(
+            `starting in ${startDelay}s`
+        );
+
+
+        await new Promise(
+            r => setTimeout(
+                r,
+                startDelay * 1000
+            )
+        );
+
+    }
+
+
+    intro();
+
+    next();
 
 }
 
 
 
-
-
 init()
-.catch(error => {
+.catch(err => {
 
-  title.textContent =
-    "no clips loaded";
+    console.error(err);
 
+    title.textContent =
+        "no clips loaded";
 
-  meta.textContent =
-    error.message;
-
-
-  setStatus(
-    error.message
-  );
+    meta.textContent =
+        err.message;
 
 });
