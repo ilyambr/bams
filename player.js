@@ -9,6 +9,7 @@ const sourceList =
 const outPath =
   path.join(root, "data", "clips.json");
 
+
 const clientId =
   "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
@@ -17,11 +18,14 @@ const R2_URL =
   "https://pub-2338fa951f8543d9a8e7c06bf364710f.r2.dev";
 
 
+
 function slugFromUrl(url) {
+
   return String(url)
     .trim()
     .split("/clip/")[1]
     ?.split(/[?#]/)[0];
+
 }
 
 
@@ -45,7 +49,7 @@ function findPart(index) {
   const part =
     Math.floor(index / 1000) + 1;
 
-  return `part-${String(part).padStart(2, "0")}`;
+  return `part-${String(part).padStart(2,"0")}`;
 
 }
 
@@ -54,10 +58,13 @@ function findPart(index) {
 function bestQuality(list) {
 
   return [...(list || [])]
-    .filter(x => x.sourceURL)
+    .filter(
+      x => x.sourceURL
+    )
     .sort(
-      (a, b) =>
-        Number(b.quality || 0) -
+      (a,b)=>
+        Number(b.quality || 0)
+        -
         Number(a.quality || 0)
     )[0];
 
@@ -67,7 +74,8 @@ function bestQuality(list) {
 
 async function fetchClip(slug) {
 
-  const query = `
+
+const query = `
 query($slug: ID!){
  clip(slug:$slug){
 
@@ -95,253 +103,273 @@ query($slug: ID!){
 `;
 
 
-  const res =
-    await fetch(
-      "https://gql.twitch.tv/gql",
-      {
-        method: "POST",
 
-        headers: {
-          "Client-ID": clientId,
-          "Content-Type": "application/json"
-        },
+const res =
+await fetch(
+  "https://gql.twitch.tv/gql",
+  {
+    method:"POST",
 
-        body: JSON.stringify({
-          query,
-          variables: {
-            slug
-          }
-        })
+    headers:{
+      "Client-ID":clientId,
+      "Content-Type":"application/json"
+    },
+
+    body:JSON.stringify({
+      query,
+      variables:{
+        slug
       }
-    );
-
-
-  const json =
-    await res.json();
-
-
-  if (
-    !res.ok ||
-    json.errors ||
-    !json.data?.clip
-  ) {
-
-    throw new Error(
-      JSON.stringify(json.errors || json)
-    );
-
+    })
   }
+);
 
 
-  return json.data.clip;
+
+const json =
+await res.json();
+
+
+
+if(
+  !res.ok ||
+  json.errors ||
+  !json.data?.clip
+){
+
+throw new Error(
+  JSON.stringify(json.errors || json)
+);
+
+}
+
+
+return json.data.clip;
 
 }
 
 
 
 
+async function main(){
 
-async function main() {
 
+const urls =
+fs.readFileSync(
+  sourceList,
+  "utf8"
+)
+.split(/\r?\n/)
+.map(x=>x.trim())
+.filter(Boolean);
 
-  const urls =
-    fs.readFileSync(
-      sourceList,
-      "utf8"
-    )
-    .split(/\r?\n/)
-    .map(x => x.trim())
-    .filter(Boolean);
 
 
+const clips = [];
+const failures = [];
 
-  const clips = [];
-  const failures = [];
 
 
 
-  for (
-    let i = 0;
-    i < urls.length;
-    i++
-  ) {
+for(
+ let i=0;
+ i<urls.length;
+ i++
+){
 
 
-    const url =
-      urls[i];
+const twitchUrl =
+urls[i];
 
 
-    const slug =
-      slugFromUrl(url);
+const slug =
+slugFromUrl(twitchUrl);
 
 
 
-    if (!slug)
-      continue;
+if(!slug)
+ continue;
 
 
 
-    try {
+try{
 
 
-      const twitch =
-        await fetchClip(slug);
+const twitch =
+await fetchClip(slug);
 
 
 
-      const quality =
-        bestQuality(
-          twitch.videoQualities
-        );
+const quality =
+bestQuality(
+ twitch.videoQualities
+);
 
 
 
-      const part =
-        findPart(i);
+const part =
+findPart(i);
 
 
 
-      const file =
-        `${slug}.mp4`;
+const filename =
+`${slug}.mp4`;
 
 
 
-      clips.push({
+const r2Video =
+`${R2_URL}/${part}/${filename}`;
 
-        id: slug,
 
 
-        title:
-          cleanText(
-            twitch.title
-          ),
+clips.push({
 
+id:slug,
 
-        url,
 
+// Twitch metadata
+url:twitchUrl,
 
-        // PLAYER USES THIS
-        // VIDEO COMES FROM R2
-        localVideo:
-          `${R2_URL}/${part}/${file}`,
 
+title:
+cleanText(
+ twitch.title
+),
 
-        quality:
-          quality?.quality || null,
 
 
-        views:
-          twitch.viewCount || 0,
+// THIS IS THE PLAYER VIDEO
+videoUrl:r2Video,
 
 
-        clipper:
-          cleanText(
-            twitch.curator?.displayName
-          ),
 
+quality:
+quality?.quality || null,
 
-        broadcaster:
-          cleanText(
-            twitch.broadcaster?.displayName
-          ),
 
 
-        createdAt:
-          twitch.createdAt,
+views:
+twitch.viewCount || 0,
 
 
-        duration:
-          twitch.durationSeconds || null
 
-      });
+clipper:
+cleanText(
+ twitch.curator?.displayName
+ ||
+ "unknown"
+),
 
 
 
-      process.stdout.write(
-        `\r${i + 1}/${urls.length}`
-      );
+broadcaster:
+cleanText(
+ twitch.broadcaster?.displayName
+ ||
+ "bams"
+),
 
 
 
-      await new Promise(
-        r => setTimeout(r, 100)
-      );
+createdAt:
+twitch.createdAt || null,
 
 
-    }
-    catch (err) {
 
+duration:
+twitch.durationSeconds || null
 
-      failures.push({
+});
 
-        slug,
 
-        error:
-          err.message
 
-      });
+process.stdout.write(
+`\r${i+1}/${urls.length}`
+);
 
 
-      console.log(
-        "\nFAILED",
-        slug,
-        err.message
-      );
 
+await new Promise(
+ r=>setTimeout(r,100)
+);
 
-    }
 
-  }
 
+}
+catch(err){
 
 
-  fs.mkdirSync(
-    path.dirname(outPath),
-    {
-      recursive:true
-    }
-  );
+failures.push({
 
+slug,
 
+error:
+err.message
 
-  fs.writeFileSync(
-    outPath,
+});
 
-    JSON.stringify(
-      {
-        generatedAt:
-          new Date().toISOString(),
 
-        clips,
+console.log(
+"\nFAILED",
+slug,
+err.message
+);
 
-        failures
 
-      },
+}
 
-      null,
 
-      2
+}
 
-    ),
 
-    "utf8"
-  );
 
+fs.mkdirSync(
+path.dirname(outPath),
+{
+recursive:true
+}
+);
 
 
-  console.log(
-    `\nSaved ${clips.length} clips`
-  );
+
+fs.writeFileSync(
+
+outPath,
+
+JSON.stringify(
+{
+generatedAt:
+new Date().toISOString(),
+
+clips,
+
+failures
+
+},
+null,
+2
+),
+
+"utf8"
+
+);
+
+
+
+console.log(
+`\nSaved ${clips.length} clips`
+);
+
 
 }
 
 
 
 main()
-.catch(err => {
+.catch(err=>{
 
-  console.error(err);
+console.error(err);
 
-  process.exit(1);
+process.exit(1);
 
 });
