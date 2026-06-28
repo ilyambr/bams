@@ -6,24 +6,16 @@ const root = path.join(__dirname, "..");
 const sourceList =
   "C:/Users/Administrator/Downloads/twitch clips.txt";
 
-const reviewClips =
-  path.join(
-    root,
-    "..",
-    "clip-review",
-    "data",
-    "clips.json"
-  );
-
 const outPath =
-  path.join(
-    root,
-    "data",
-    "clips.json"
-  );
+  path.join(root, "data", "clips.json");
 
 const clientId =
   "kimne78kx3ncx6brgo4mv6wki5h1ko";
+
+const R2_URL =
+  "https://pub-2338fa951f8543d9a8e7c06bf364710f.r2.dev";
+
+const BATCH_SIZE = 99;
 
 
 
@@ -38,36 +30,26 @@ function slugFromUrl(url){
 
 
 
-// Titles can lose broken emoji.
-// Names should keep unicode.
-function cleanTitle(value){
+function cleanText(value){
 
   if(!value)
     return "";
 
   return String(value)
-    .replace(/ð.{0,2}/g,"")
-    .replace(/Ã.{0,2}/g,"")
-    .replace(/â.{0,3}/g,"")
-    .replace(/≡ƒ.{0,3}/g,"")
-    .replace(/Γ.{0,3}/g,"")
+    .normalize("NFC")
     .replace(/\s+/g," ")
-    .trim()
-    .normalize("NFC");
+    .trim();
 
 }
 
 
 
-function cleanName(value){
+function findPart(index){
 
-  if(!value)
-    return "";
+  const part =
+    Math.floor(index / BATCH_SIZE) + 1;
 
-  return String(value)
-    .replace(/\s+/g," ")
-    .trim()
-    .normalize("NFC");
+  return `part-${String(part).padStart(2,"0")}`;
 
 }
 
@@ -76,13 +58,10 @@ function cleanName(value){
 function bestQuality(list){
 
   return [...(list || [])]
-    .filter(
-      x => x.sourceURL
-    )
+    .filter(x => x.sourceURL)
     .sort(
       (a,b)=>
-        Number(b.quality || 0)
-        -
+        Number(b.quality || 0) -
         Number(a.quality || 0)
     )[0];
 
@@ -112,14 +91,12 @@ query($slug: ID!){
 
   videoQualities{
     quality
-    frameRate
     sourceURL
   }
 
  }
 }
 `;
-
 
 
 const res =
@@ -130,15 +107,12 @@ await fetch(
 
     headers:{
       "Client-ID":clientId,
-      "Content-Type":
-        "application/json"
+      "Content-Type":"application/json"
     },
 
     body:JSON.stringify({
       query,
-      variables:{
-        slug
-      }
+      variables:{slug}
     })
   }
 );
@@ -156,11 +130,12 @@ if(
   !json.data?.clip
 ){
 
-throw new Error(
- `${slug}: ${JSON.stringify(json.errors || json)}`
-);
+  throw new Error(
+    JSON.stringify(json.errors || json)
+  );
 
 }
+
 
 
 return json.data.clip;
@@ -169,57 +144,17 @@ return json.data.clip;
 
 
 
-
-
 async function main(){
 
 
 const urls =
 fs.readFileSync(
- sourceList,
- "utf8"
+  sourceList,
+  "utf8"
 )
 .split(/\r?\n/)
 .map(x=>x.trim())
 .filter(Boolean);
-
-
-
-let oldClips=[];
-
-
-if(fs.existsSync(reviewClips)){
-
-try{
-
-oldClips =
-JSON.parse(
- fs.readFileSync(
-  reviewClips,
-  "utf8"
- )
-);
-
-
-}catch{
-
-oldClips=[];
-
-}
-
-}
-
-
-
-const oldMap =
-new Map(
- oldClips.map(
-  clip=>[
-   clip.id,
-   clip
-  ]
- )
-);
 
 
 
@@ -229,9 +164,9 @@ const failures=[];
 
 
 for(
-let i=0;
-i<urls.length;
-i++
+ let i=0;
+ i<urls.length;
+ i++
 ){
 
 
@@ -245,7 +180,7 @@ slugFromUrl(url);
 
 
 if(!slug)
-continue;
+ continue;
 
 
 
@@ -256,9 +191,6 @@ const twitch =
 await fetchClip(slug);
 
 
-const old =
-oldMap.get(slug) || {};
-
 
 const quality =
 bestQuality(
@@ -268,7 +200,17 @@ bestQuality(
 
 
 if(!quality)
-throw new Error("no twitch quality");
+ throw new Error("no quality");
+
+
+
+const part =
+findPart(i);
+
+
+
+const file =
+`${slug}.mp4`;
 
 
 
@@ -278,18 +220,16 @@ id:slug,
 
 
 title:
-cleanTitle(
- twitch.title ||
- old.title ||
- slug
+cleanText(
+ twitch.title
 ),
 
 
 url,
 
 
-localVideo:
-`videos/${slug}.mp4`,
+videoUrl:
+`${R2_URL}/${part}/${file}`,
 
 
 quality:
@@ -297,37 +237,27 @@ quality.quality,
 
 
 views:
-twitch.viewCount ??
-old.view_count ??
-0,
+twitch.viewCount ?? 0,
 
 
 clipper:
-cleanName(
- twitch.curator?.displayName ||
- old.creator_name ||
- "unknown"
+cleanText(
+ twitch.curator?.displayName
 ),
 
 
 broadcaster:
-cleanName(
- twitch.broadcaster?.displayName ||
- old.broadcaster_name ||
- "bams"
+cleanText(
+ twitch.broadcaster?.displayName
 ),
 
 
 createdAt:
-twitch.createdAt ||
-old.created_at ||
-null,
+twitch.createdAt,
 
 
 duration:
-twitch.durationSeconds ||
-old.duration ||
-null
+twitch.durationSeconds ?? null
 
 });
 
@@ -340,12 +270,14 @@ process.stdout.write(
 
 
 await new Promise(
-r=>setTimeout(r,100)
+ r=>setTimeout(r,100)
 );
+
 
 
 }
 catch(err){
+
 
 failures.push({
 
@@ -359,6 +291,7 @@ err.message
 
 console.log(
 "\nFAILED:",
+slug,
 err.message
 );
 
@@ -366,40 +299,36 @@ err.message
 }
 
 
-
 }
 
 
 
 fs.mkdirSync(
-path.dirname(outPath),
-{
-recursive:true
-}
+ path.dirname(outPath),
+ {
+  recursive:true
+ }
 );
 
 
 
 fs.writeFileSync(
+ outPath,
 
-outPath,
+ JSON.stringify(
+ {
+  generatedAt:
+   new Date().toISOString(),
 
-JSON.stringify(
-{
-generatedAt:
-new Date().toISOString(),
+  clips,
 
-clips,
+  failures
+ },
+ null,
+ 2
+ ),
 
-failures
-
-},
-null,
-2
-),
-
-"utf8"
-
+ "utf8"
 );
 
 
