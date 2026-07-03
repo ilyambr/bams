@@ -50,6 +50,38 @@ function shuffle(arr) {
     return copy;
 }
 
+function weightedShuffle(arr) {
+    const copy = [...arr];
+    const weighted = [];
+
+    // Create weighted array where higher view count = more chances
+    for (const clip of copy) {
+        const views = Number(clip.views || 0);
+        // Clips under 100 views get 1 chance, over 100 get a slight boost
+        const weight = views < 100 ? 1 : 1 + Math.log(views / 100) * 0.15;
+        
+        // Add clip multiple times based on weight
+        const copies = Math.max(1, Math.round(weight));
+        for (let i = 0; i < copies; i++) {
+            weighted.push(clip);
+        }
+    }
+
+    // Standard shuffle on weighted array
+    for (let i = weighted.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [weighted[i], weighted[j]] = [weighted[j], weighted[i]];
+    }
+
+    // Remove duplicates while preserving order
+    const seen = new Set();
+    return weighted.filter(clip => {
+        if (seen.has(clip.id)) return false;
+        seen.add(clip.id);
+        return true;
+    });
+}
+
 function formatViews(v) {
     return `${Number(v || 0).toLocaleString()} Views`;
 }
@@ -108,7 +140,7 @@ function nextClip() {
     clearTimeout(timer);
 
     if (!queue.length || index >= queue.length) {
-        queue = shuffle(clips);
+        queue = weightedShuffle(clips);
         index = 0;
     }
 
@@ -188,7 +220,7 @@ async function init() {
         throw new Error("no clips loaded");
     }
 
-    queue = shuffle(clips);
+    queue = weightedShuffle(clips);
 
     brandIntro();
 
