@@ -392,6 +392,73 @@ return res.end();
 }
 
 
+if (pathname.includes("/api/youtube-proxy")) {
+  const targetUrl = url.searchParams.get("url");
+  if (!targetUrl) {
+    return send(res, 400, "Missing url parameter");
+  }
+
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    return res.end();
+  }
+
+  try {
+    let body;
+    if (req.method === "POST") {
+      const buffers = [];
+      for await (const chunk of req) {
+        buffers.push(chunk);
+      }
+      body = Buffer.concat(buffers);
+    }
+
+    const initHeaders = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Referer": "https://www.youtube.com"
+    };
+
+    const headersToForward = [
+      "content-type",
+      "x-youtube-client-name",
+      "x-youtube-client-version",
+      "x-goog-visitor-id"
+    ];
+    for (const h of headersToForward) {
+      if (req.headers[h]) {
+        initHeaders[h] = req.headers[h];
+      }
+    }
+
+    const response = await fetch(targetUrl, {
+      method: req.method,
+      headers: initHeaders,
+      body: body
+    });
+
+    const responseHeaders = {};
+    const headersToCopy = ["content-type", "content-encoding", "cache-control"];
+    for (const h of headersToCopy) {
+      const val = response.headers.get(h);
+      if (val) {
+        responseHeaders[h] = val;
+      }
+    }
+    responseHeaders["Access-Control-Allow-Origin"] = "*";
+
+    res.writeHead(response.status, responseHeaders);
+    const responseBody = await response.arrayBuffer();
+    return res.end(Buffer.from(responseBody));
+  } catch (err) {
+    return send(res, 500, "Proxy error: " + err.message);
+  }
+}
+
+
 
 
 
