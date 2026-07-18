@@ -408,8 +408,8 @@ if (pathname.includes("/api/youtube-proxy")) {
   }
 
   try {
-    let body;
-    if (req.method === "POST") {
+    let body = null;
+    if (req.method === "POST" || req.method === "PUT") {
       const buffers = [];
       for await (const chunk of req) {
         buffers.push(chunk);
@@ -418,7 +418,7 @@ if (pathname.includes("/api/youtube-proxy")) {
     }
 
     const initHeaders = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Referer": "https://www.youtube.com"
     };
 
@@ -434,11 +434,15 @@ if (pathname.includes("/api/youtube-proxy")) {
       }
     }
 
-    const response = await fetch(targetUrl, {
+    const init = {
       method: req.method,
-      headers: initHeaders,
-      body: body
-    });
+      headers: initHeaders
+    };
+    if (body) {
+      init.body = body;
+    }
+
+    const response = await fetch(targetUrl, init);
 
     const responseHeaders = {};
     const headersToCopy = ["content-type", "content-encoding", "cache-control"];
@@ -451,8 +455,12 @@ if (pathname.includes("/api/youtube-proxy")) {
     responseHeaders["Access-Control-Allow-Origin"] = "*";
 
     res.writeHead(response.status, responseHeaders);
-    const responseBody = await response.arrayBuffer();
-    return res.end(Buffer.from(responseBody));
+    if (response.body) {
+      for await (const chunk of response.body) {
+        res.write(chunk);
+      }
+    }
+    return res.end();
   } catch (err) {
     return send(res, 500, "Proxy error: " + err.message);
   }
